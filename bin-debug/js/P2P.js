@@ -1,5 +1,8 @@
 /*
 * P2P.JS
+*
+*
+*
 */
 
 P2P = (function() {
@@ -16,26 +19,30 @@ P2P = (function() {
 
     
     // constructor
+    // parameters:
+    // id: name of the p2p instance. used to separate multiple instances
+    // display: url to png/jpg/swf to show while connecting 
+    // container: div containing the flash
+    // callback: function callled when swf has been embedded
     
-    function p2p( id, onSWFEmbeddedCallback ) {
+    function p2p( parameters ) {
         
-        this.id = id;
+        this.id = parameters.id;
+        this.onSWFEmbeddedCallback = parameters.callback;
         this.swf = undefined;
-        this.onSWFEmbeddedCallback = onSWFEmbeddedCallback;
+        this.onCallbacks = {};
         
         p2pInstances[ this.id ] = this;
+ 
         
         var container = document.createElement( "div" );
-        container.id = "P2P_containerDiv_" + this.id;
-        container.p2pInstance = this;
+        container.id = "P2P_container_" + this.id;
         
-        var swfContainer = document.createElement( "div" );
-        swfContainer.id = "P2P_swfDiv_" + this.id;
+        if( parameters.container !== undefined )
+            parameters.container.appendChild( container );
+        else
+            document.body.appendChild( container );
         
-       document.body.appendChild( container );
-       container.appendChild( swfContainer );
-        
-
         var flashVariables = {};
         var flashParameters = {};
         var flashAttributes = {};
@@ -46,56 +53,130 @@ P2P = (function() {
         flashAttributes.id = "P2P_swf_" + this.id;
         flashAttributes.name = "P2P_swf_" + this.id;
 
-        swfobject.embedSWF( P2P.swfPath, "P2P_swfDiv_" + this.id, "100%", "100%", "10.2", "", flashVariables, flashParameters, flashAttributes, this.onSWFEmbed );
+        var scope = this;
+        var method = this.onEmbed;
+
+        swfobject.embedSWF( P2P.swfPath, "P2P_container_" + this.id, "100%", "100%", "10.2", "", flashVariables, flashParameters, flashAttributes, function( result ) {
+            method.call( scope, result );
+        } );
     }
     
-    p2p.prototype.onSWFEmbed = function( result ) {
+    p2p.prototype.onEmbed = function( result ) {
         
-        var p2pInstance = result.ref.parentNode.p2pInstance;
-        p2pInstance.swf = swfobject.getObjectById( "P2P_swf_" + p2pInstance.id );
+        this.swf = swfobject.getObjectById( "P2P_swf_" + this.id );
         
-        if( p2pInstance.onSWFEmbeddedCallback ) {
-            p2pInstance.onSWFEmbeddedCallback.call( null );
+        if( this.onSWFEmbeddedCallback ) {
+            this.onSWFEmbeddedCallback.call( null );
         }
     }
     
-    p2p.prototype.connect = function( url, group ) {
+    // on
+    // type: type name
+    // callback: function
+
+    p2p.prototype.on = function( type, callback ) {
+        if( this.onCallbacks[ type ] === undefined )
+            this.onCallbacks[ type ] = [];
+        
+        this.onCallbacks[ type ].push( callback );
+    }
+
+    p2p.prototype.callOnCallbacks = function( name, parameters ) {
+        var callbacks = this.onCallbacks[ name ];
+        if( callbacks !== undefined && callbacks.length !== undefined )
+            for( var i = 0, len = callbacks.length; i < len; i++ )
+                callbacks[ i ].call( null, parameters );
+        
+    }
+
+
+    // connect
+    // parameters:
+    // uri: connect uri
+    // group: name of group to connect to
+    
+    p2p.prototype.connect = function( url ) {
         this.url = url;
-        this.group = group;
         
         // need to wait for the swf constructor to run
         
         if( this.swf.connect === undefined ) {
             var scope = this;
-            var connectMethod = this.connect;
-            setTimeout( function() { connectMethod.call( scope, url, group ) }, 33 );
+            var method = this.connect;
+            setTimeout( function() { method.call( scope, url ) }, 33 );
         } else {
-            console.log( "P2P.connect: " + url, group );
-            this.swf.connect( url ); 
+            this.swf.connect( this.url ); 
         }
     }
     
     p2p.prototype.onConnect = function( parameters ) {
-        console.log( "P2P.onConnect: " + this.id );
-        
-        if( this.group !== undefined ) {
-            this.joinGroup( this.group );
-        }
-    }
-    
-    p2p.prototype.joinGroup = function( group ) {
-        if( this.group === undefined ) {
-            this.group = "group" + Math.random() * 10000;
-        }
-        
-        this.swf.joinGroup( group );
-    }
-    
-    p2p.prototype.onMessage = function( parameters ) {
-        console.log( "P2P.onMessage: " + this.id );
+        this.callOnCallbacks( "connect", parameters );
     }
 
-    // static
+
+    // joinGroup
+    // parameters:
+    // name: name of group
+    // post: allow posting true/false
+    // stream: allow multicast streams true/false
+    // replicate: allow object replication true/false
+    // password: post/stream password
+    
+    p2p.prototype.joinGroup = function( group ) {
+
+        if( group === undefined ) {
+            group = {};
+            group.name = "group" + parseInt( "" + Math.random() * 10000 );
+            group.post = true;
+            group.stream = false;
+            group.replicate = false;
+            group.password = undefined;
+        }
+
+        this.group = group;
+        this.swf.joinGroup( this.group );
+    }
+
+    p2p.prototype.onJoinGroup = function( result ) {
+        this.callOnCallbacks( "joinGroup", result );
+    }
+    
+    p2p.prototype.onNeighbor = function( result ) {
+        this.callOnCallbacks( "neighbor", result );
+    }
+
+
+    // post
+    // parameters: message object
+    
+    p2p.prototype.post = function( message ) {
+        this.swf.post( message );
+    }
+    
+    p2p.prototype.onPost = function( message ) {
+        this.callOnCallbacks( "post", message );
+    }
+    
+    p2p.prototype.stream = function( message ) {
+        // todo
+    }
+    
+    p2p.prototype.onStream = function( message ) {
+        // todo
+    }
+    
+    p2p.prototype.replicate = function( message ) {
+    }
+    
+    p2p.prototype.onReplicate = function( message ) {
+    }
+    
+    p2p.prototype.onUnhandled = function( result ) {
+        console.warn( "P2P.onUnhandled: " );
+        console.warn( result );
+    }
+
+    //--- static ---
     
     p2p.getInstanceById = function( id ) {
         return p2pInstances[ id ];
@@ -112,7 +193,6 @@ P2P = (function() {
 // from Flash into the P2P instance.
 
 P2PRelay = function( P2PId, functionName, parameters ) {
-    console.log( "P2PRelay: " + P2PId, functionName, parameters );
     P2P.getInstanceById( P2PId )[ functionName ]( parameters );
 }
 

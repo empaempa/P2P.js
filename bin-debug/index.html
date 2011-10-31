@@ -1,39 +1,58 @@
 <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
-<!-- saved from url=(0014)about:internet -->
 <html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">	
-    <!-- 
-    Smart developers always View Source. 
-    
-    This application was built using Adobe Flex, an open source framework
-    for building rich Internet applications that get delivered via the
-    Flash Player or to desktops via Adobe AIR. 
-    
-    Learn more about Flex at http://flex.org 
-    // -->
     <head>
         <title>P2P.JS</title>         
-        <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
-		<!-- Include CSS to eliminate any default margins/padding and set the height of the html element and 
-		     the body element to 100%, because Firefox, or any Gecko based browser, interprets percentage as 
-			 the percentage of the height of its parent container, which has to be set explicitly.  Initially, 
-			 don't display flashContent div so it won't show if JavaScript disabled.
-		-->
-        <style type="text/css" media="screen"> 
-			html, body	{ height:100%; }
-			body { margin:0; padding:0; overflow:auto; text-align:center; 
-			       background-color: #ffffff; }   
-			#flashContent { display:none; }
-        </style>
-		
-		    
         <script type="text/javascript" src="js/external/swfobject.js"></script>
         <script type="text/javascript" src="js/P2P.js"></script>
     </head>
     <body>
+        
+        <!-- Note that the container needs to be atleast 214x137px to diplay the allow dialog -->
+        <div id="container" style="width:214px;height:137px"></div>
+        
+        <script type="text/javascript">
+
+     		var p2p = new P2P( { id:"myTestId", container: document.getElementById( "container" ), callback: onInit } );
+
+     		function onInit() {
+
+     			p2p.on( "connect", function( result ) {
+     			    console.log( "onConnect: " + result );
+     			    p2p.joinGroup( { name: "hello" } );
+     			} );
+
+     			p2p.on( "joinGroup", function( result ) {
+     			    console.log( "onJoinGroup: " + result );
+     			} );
+     		
+     		    p2p.on( "neighbor", function( result ) {
+     		        console.log( "onNeighbor: " );
+     		        console.log( result );
+     		    } );
+     			
+     		    p2p.on( "neighborDisconnect", function( result ) {
+     		        console.log( "onNeighborDisconnect: " );
+     		        console.log( result );
+     		    } );
+     			     			
+     			p2p.on( "post", function( message ) {
+     			    console.log( "onPost: " );
+     			    console.log( message );
+     			} );
+     			
+     			p2p.on( "stream", function( message) {
+     			    console.log( "onStream: " );
+     			    console.log( message );
+     			} );
+     			
+     			p2p.connect( "rtmfp://107.20.237.100/multicast/" );
+     		}
+     		
+			document.onkeypress = function( e ) {
+			    console.log( "onKeyPress" );
+			    p2p.post( { rnd: Math.random(), message: "hello world!" } );
+			}
+
+        </script>
    </body>
-   <script type="text/javascript">
-		var p = new P2P( "myTestId", function() {
-			p.connect( "rtmfp://107.20.237.100/multicast/", "testGroup" );
-		} );
-   </script>
 </html>
