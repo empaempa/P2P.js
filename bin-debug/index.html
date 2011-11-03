@@ -4,55 +4,160 @@
         <title>P2P.JS</title>         
         <script type="text/javascript" src="js/external/swfobject.js"></script>
         <script type="text/javascript" src="js/P2P.js"></script>
+        <script type="text/javascript" src="http://empaempa.github.com/GLOW/build/GLOW.js"></script> 
     </head>
-    <body>
+    <body style="border:0px;margin:0px;padding:0px;overflow:hidden;">
         
         <!-- Note that the container needs to be atleast 214x137px to diplay the allow dialog -->
-        <div id="container" style="width:214px;height:137px"></div>
+        <div id="glow" style="border:0px;margin:0px;padding:0px;overflow:hidden;width:100%;height:100%;z-index:0;">
+        <div id="container" style="position:absolute;top:100px;left:100px;width:214px;height:137px;z-index:1;"></div>
+        
         
         <script type="text/javascript">
 
-     		var p2p = new P2P( { id:"myTestId", container: document.getElementById( "container" ), callback: onInit } );
-
+     		var p2p = new P2P( { id:"myTestId" + Math.floor( Math.random() * 9999 ), container: document.getElementById( "container" ), callback: onInit } );
+            var neighbors = {};
+            var connected = false;
+            
      		function onInit() {
 
      			p2p.on( "connect", function( result ) {
-     			    console.log( "onConnect: " + result );
+     			    console.log( "onConnect: ", result );
      			    p2p.joinGroup( { name: "hello" } );
+     			} );
+     			
+     			p2p.on( "disconnect", function( result ) {
+     			    console.log( "onDisconnect: " + result );
      			} );
 
      			p2p.on( "joinGroup", function( result ) {
-     			    console.log( "onJoinGroup: " + result );
+     			    console.log( "onJoinGroup: ", result );
+     			    document.getElementById( "container" ).style.width  = "0px";
+     			    document.getElementById( "container" ).style.height = "0px";
+     			    p2p.hide();
+     			    connected = true;
      			} );
      		
      		    p2p.on( "neighbor", function( result ) {
-     		        console.log( "onNeighbor: " );
-     		        console.log( result );
+     		        console.log( "onNeighbor: ", result );
      		    } );
      			
      		    p2p.on( "neighborDisconnect", function( result ) {
-     		        console.log( "onNeighborDisconnect: " );
-     		        console.log( result );
+     		        console.log( "onNeighborDisconnect: ", result );
      		    } );
      			     			
      			p2p.on( "post", function( message ) {
-     			    console.log( "onPost: " );
-     			    console.log( message );
+     			    if( message.i ) {
+         			    if( neighbors[ message.i ] === undefined )
+         			        neighbors[ message.i ] = { status: message, cube: undefined };
+         			    else
+         			        neighbors[ message.i ].status = message;
+     			    }
      			} );
+
+                p2p.on( "stream", function( message ) {
+     			    if( message.i ) {
+         			    if( neighbors[ message.i ] === undefined )
+         			        neighbors[ message.i ] = { status: message, cube: undefined };
+         			    else
+         			        neighbors[ message.i ].status = message;
+     			    }
+                } );
      			
-     			p2p.on( "stream", function( message) {
-     			    console.log( "onStream: " );
-     			    console.log( message );
-     			} );
-     			
-     			p2p.connect( "rtmfp://107.20.237.100/multicast/" );
+     			p2p.connect( "rtmfp://p2p.rtmfp.net/73d0dce95e08c3cfc6f50acb-5639b3742a91/" );
      		}
      		
-			document.onkeypress = function( e ) {
-			    console.log( "onKeyPress" );
-			    p2p.post( { rnd: Math.random(), message: "hello world!" } );
+     		
+     		// setup glow
+     		
+			var context = new GLOW.Context();
+			context.setupClear( { red: 0, green: 0, blue: 0 } );
+			document.getElementById( "glow" ).appendChild( context.domElement );
+
+			var cubeShaderInfo = {
+				vertexShader: [
+					"uniform	mat4 	transform;",
+					"uniform 	mat4 	cameraInverse;",
+					"uniform 	mat4 	cameraProjection;",
+
+					"attribute 	vec3 	vertices;",
+					"attribute  vec3	normals;",
+
+					"varying    float   light;",
+
+					"void main(void)",
+					"{",
+						"light = dot( normalize( mat3( transform[0].xyz, transform[1].xyz, transform[2].xyz ) * normals ), vec3( 0.0, 0.0, -1.0 ));",
+						"gl_Position = cameraProjection * cameraInverse * transform * vec4( vertices, 1.0 );",
+					"}"
+				].join( "\n" ),
+
+				fragmentShader: [ 	
+					"#ifdef GL_ES",
+						"precision highp float;",
+					"#endif",		
+
+					"varying    float  	 	light;",
+
+					"void main( void )",
+					"{",
+						"gl_FragColor = vec4( light, light, light, 1.0 );",
+					"}"
+				].join( "\n" ),
+
+				data: {
+
+					transform: new GLOW.Matrix4(),
+					cameraInverse: GLOW.defaultCamera.inverse,
+					cameraProjection: GLOW.defaultCamera.projection,
+					vertices: GLOW.Geometry.Cube.vertices( 150 ),
+					normals: GLOW.Geometry.faceNormals( GLOW.Geometry.Cube.vertices(), GLOW.Geometry.Cube.elements())
+				},
+
+				elements: GLOW.Geometry.Cube.elements(),
 			}
 
+			var myCube = new GLOW.Shader( cubeShaderInfo );
+			var myStatus = { i: "id" + new Date().getTime() };
+
+
+            myCube.transform.setPosition( 0, -200, 0 );
+			GLOW.defaultCamera.localMatrix.setPosition( 0, 0, 1500 );
+			GLOW.defaultCamera.update();
+
+
+			setInterval( render, 1000 / 60 );
+
+			function render() {
+				context.cache.clear();
+				context.clear();
+
+				myCube.draw();
+				
+				var posX = 0; //-640
+				for( n in neighbors ) {
+				    var neighbor = neighbors[ n ];
+				    if( neighbor.cube === undefined ) {
+				        neighbor.cube = new GLOW.Shader( { use:myCube.compiledData, except:{ transform: new GLOW.Matrix4() } } );
+				    }
+				    
+				    neighbor.cube.transform.setRotation( neighbor.status.x, neighbor.status.y, 0.0 );
+				    neighbor.cube.transform.setPosition( posX, 200, 0 );
+				    neighbor.cube.draw();
+
+				    posX += 320;
+				}
+
+				if( connected )
+				    p2p.post( myStatus );
+			}
+            
+			document.onmousemove = function( e ) {
+				myStatus.x = Math.floor( 1000 * e.clientX * Math.PI / 180 ) / 1000;
+				myStatus.y = Math.floor( 1000 * e.clientY * Math.PI / 180 ) / 1000;
+				myCube.transform.setRotation( myStatus.x, myStatus.y, 0.0 );
+			}
+     		
         </script>
    </body>
 </html>

@@ -18,6 +18,8 @@ package {
 	import flash.net.GroupSpecifier;
 	import flash.net.NetConnection;
 	import flash.net.NetGroup;
+	import flash.net.NetGroupReceiveMode;
+	import flash.net.NetGroupReplicationStrategy;
 	import flash.net.NetStream;
 	import flash.system.Security;
 	import flash.utils.getTimer;
@@ -36,6 +38,7 @@ package {
 		private var m_NetStream		:NetStream;
 		private var m_Id			:String;
 		private var m_PostCounter   :int = 0;
+		private var m_StreamsIn		:Object;
 		
 		
 		//--- methods ------------------------------------------------
@@ -56,6 +59,8 @@ package {
 			ExternalInterface.addCallback( "post", post );
 			ExternalInterface.addCallback( "stream", stream );
 			ExternalInterface.addCallback( "replicate", replicate );
+			
+			m_StreamsIn = {};
 		}
 		
 		
@@ -84,7 +89,7 @@ package {
 			m_GroupSpec = new GroupSpecifier( parameters.name );
 			m_GroupSpec.serverChannelEnabled = true;
 			m_GroupSpec.postingEnabled = parameters.post != undefined ? parameters.post : true;
-			m_GroupSpec.multicastEnabled = parameters.stream != undefined ? parameters.stream : false;
+			m_GroupSpec.multicastEnabled = parameters.stream != undefined ? parameters.stream : true;
 			m_GroupSpec.objectReplicationEnabled = parameters.replication != undefined ? parameters.replication : false;
 			
 			if( parameters.password != undefined ) {
@@ -96,6 +101,7 @@ package {
 			}
 			
 			m_NetGroup = new NetGroup( m_NetConnection, m_GroupSpec.groupspecWithAuthorizations());
+			m_NetGroup.receiveMode = NetGroupReceiveMode.NEAREST;
 			m_NetGroup.addEventListener( NetStatusEvent.NET_STATUS, onNetStatus );
 		}
 		
@@ -103,16 +109,40 @@ package {
 		//--- post ---
 		
 		public function post( message:Object ):void {
-			message.p2p = m_PostCounter++;
-			m_NetGroup.post( message );
+			if( m_NetConnection && m_NetConnection.connected && m_NetGroup ){
+				message.p2p = m_PostCounter++;
+				m_NetGroup.post( message );
+			} else {
+				callJS( "onError", { error: "Posting before connecting and joining group" } );
+			}
 		}
 
 		
 		//--- stream ---
 		
-		public function stream( message:String ):void {
-			// todo:
-			// http://www.flashrealtime.com/multicast-explained-flash-101-p2p/
+		public function stream( message:Object ):void {
+			if( m_NetConnection && m_NetConnection.connected && m_NetGroup ) {
+				if( !m_NetStream ) {
+					m_NetStream = new NetStream( m_NetConnection, m_GroupSpec.groupspecWithoutAuthorizations());
+					m_NetStream.client = this;
+					m_NetStream.dataReliable = false;
+					m_NetStream.addEventListener( NetStatusEvent.NET_STATUS, onNetStatus );
+					
+					if( message.name == undefined )
+						message.name = "stream" + new Date().getTime() + "" + Math.floor( Math.random() * 99999 );
+					
+					m_NetStream.publish( message.name, "live" );
+				}
+				
+				m_NetStream.send( "onStream", message );
+			} else {
+				callJS( "onError", { error: "Streaming before connecting and joining group" } );
+			}
+		}
+		
+		public function onStream( message:Object ):void {
+//			trace( message );
+			callJS( "onStream", message );
 		}
 		
 		
@@ -123,6 +153,16 @@ package {
 			// http://www.flashrealtime.com/file-share-object-replication-flash-p2p/
 		}
 
+		
+		//--- call ---
+		
+		private function callJS( method:String, message:Object ):void {
+			try {
+				ExternalInterface.call( "P2PRelay", m_Id, method, message );
+			} catch( e:Error ) {
+				throw e;
+			}
+		}
 		
 		//--- onNetStatus ---
 		
@@ -137,41 +177,63 @@ package {
 				case "NetConnection.Connect.Closed":
 				case "NetConnection.Connect.IdleTimeout":
 				case "NetConnection.Connect.Rejected":
-					ExternalInterface.call( "P2PRelay", m_Id, "onConnect",{ success: false, reason: e.info.code } );
+					callJS( "onDisconnect", { success: false, reason: e.info.code } );
 					break;
 				
-				
 				case "NetGroup.Connect.Success":
-					ExternalInterface.call( "P2PRelay", m_Id, "onJoinGroup", { success: true } );
+					callJS( "onJoinGroup", { success: true } );
 					break;
 				
 				case "NetGroup.Connect.Failed":
 				case "NetGroup.Connect.Rejected":
-					ExternalInterface.call( "P2PRelay", m_Id, "onJoinGroup", { success: false, reason: e.info.code } );
+					callJS( "onJoinGroup", { success: false, reason: e.info.code } );
 					break;
 
 				
 				case "NetGroup.Posting.Notify":
 				case "NetGroup.SendTo.Notify":
-					ExternalInterface.call( "P2PRelay", m_Id, "onPost", e.info.message );
+					callJS( "onPost", e.info.message );
 					break;
 				
 				case "NetGroup.Neighbor.Connect":
-					ExternalInterface.call( "P2PRelay", m_Id, "onNeighbor", { neighbor: e.info.neighbor, peerId: e.info.peerID } );
+					callJS( "onNeighbor", { neighbor: e.info.neighbor, peerId: e.info.peerID } );
 					break;
 				
 				case "NetGroup.Neighbor.Disconnect":
-					ExternalInterface.call( "P2PRelay", m_Id, "onNeighborDisconnect", { neighbor: e.info.neighbor, peerId: e.info.peerID } );
+					callJS( "onNeighborDisconnect", { neighbor: e.info.neighbor, peerId: e.info.peerID } );
 					break;
 					
+				case "NetGroup.MulticastStream.PublishNotify":
+					if( m_StreamsIn[ e.info.name ] == undefined ) {
+						m_StreamsIn[ e.info.name ] = new NetStream( m_NetConnection, m_GroupSpec.groupspecWithoutAuthorizations());
+						m_StreamsIn[ e.info.name ].client = this;
+						m_StreamsIn[ e.info.name ].play( e.info.name );
+						callJS( "onInfo", { code: e.info.code, name: e.info.name } );
+					}
+					break;
+				
+				case "NetGroup.MulticastStream.UnpublishNotify":
+					if( m_StreamsIn[ e.info.name ] != undefined ) {
+						m_StreamsIn[ e.info.name ].close();
+						delete m_StreamsIn[ e.info.name ];
+						callJS( "onInfo", { code: e.info.code, name: e.info.name } );
+					}
+					break;
+				
+				case "NetStream.Connect.Success":
+					callJS( "onInfo", { code: e.info.code } );
+					break;					
+				
+				case "NetStream.Publish.Start":
+					callJS( "onInfo", { code: e.info.code, description: e.info.description } );
+					break;
+				
 				default:
-					ExternalInterface.call( "P2PRelay", m_Id, "onUnhandled", e.info );
-					trace( "Unhandled onNetStatus: " + e.info.code );
-
+					callJS( "onError", { error: "Unhandled NetStatus Event", info: e.info } );
+					break;
 			}
 		}
 	}
-
 }
 
 

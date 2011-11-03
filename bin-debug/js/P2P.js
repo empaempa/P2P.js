@@ -70,6 +70,11 @@ P2P = (function() {
         }
     }
     
+    p2p.prototype.hide = function() {
+        this.swf.style.width = "0px";
+        this.swf.style.height = "0px";
+    }
+    
     // on
     // type: type name
     // callback: function
@@ -85,7 +90,7 @@ P2P = (function() {
         var callbacks = this.onCallbacks[ name ];
         if( callbacks !== undefined && callbacks.length !== undefined )
             for( var i = 0, len = callbacks.length; i < len; i++ )
-                callbacks[ i ].call( null, parameters );
+                callbacks[ i ]( parameters );
         
     }
 
@@ -105,6 +110,7 @@ P2P = (function() {
             var method = this.connect;
             setTimeout( function() { method.call( scope, url ) }, 33 );
         } else {
+            console.log( "P2P.connect: " + this.url );
             this.swf.connect( this.url ); 
         }
     }
@@ -123,18 +129,21 @@ P2P = (function() {
     // password: post/stream password
     
     p2p.prototype.joinGroup = function( group ) {
+        if( this.swf.joinGroup ) {
+            if( group === undefined ) {
+                group = {};
+                group.name = "group" + parseInt( "" + Math.random() * 10000 );
+                group.post = true;
+                group.stream = true;
+                group.replicate = false;
+                group.password = undefined;
+            }
 
-        if( group === undefined ) {
-            group = {};
-            group.name = "group" + parseInt( "" + Math.random() * 10000 );
-            group.post = true;
-            group.stream = false;
-            group.replicate = false;
-            group.password = undefined;
+            this.group = group;
+            this.swf.joinGroup( this.group );
+        } else {
+            console.error( "P2P.joinGroup: P2P SWF not yet initialized, please await init." );
         }
-
-        this.group = group;
-        this.swf.joinGroup( this.group );
     }
 
     p2p.prototype.onJoinGroup = function( result ) {
@@ -145,12 +154,22 @@ P2P = (function() {
         this.callOnCallbacks( "neighbor", result );
     }
 
+    p2p.prototype.onNeighborDisconnect = function( result ) {
+        this.callOnCallbacks( "neighborDisconnect", result );
+    }
+
+    p2p.prototype.onDisconnect = function( result ) {
+        this.callOnCallbacks( "disconnect", result );
+    }
 
     // post
     // parameters: message object
     
     p2p.prototype.post = function( message ) {
-        this.swf.post( message );
+        if( this.swf.post ) 
+            this.swf.post( message );
+        else
+            console.warn( "P2P.post: post not available as SWF isn't initialized. Message discarded." );
     }
     
     p2p.prototype.onPost = function( message ) {
@@ -158,22 +177,31 @@ P2P = (function() {
     }
     
     p2p.prototype.stream = function( message ) {
-        // todo
+        if( this.swf.stream )
+            this.swf.stream( message );
+        else
+            console.warn( "P2P.stream: stream not available as SWF isn't initialized. Message discarded." );
     }
     
     p2p.prototype.onStream = function( message ) {
-        // todo
+        this.callOnCallbacks( "stream", message );
     }
     
     p2p.prototype.replicate = function( message ) {
+        // todo
     }
     
     p2p.prototype.onReplicate = function( message ) {
+        this.callOnCallbacks( "replicate", message );
     }
     
-    p2p.prototype.onUnhandled = function( result ) {
-        console.warn( "P2P.onUnhandled: " );
-        console.warn( result );
+    p2p.prototype.onError = function( message ) {
+        //this.callOnCallbacks( "error", message );
+        console.warn( "P2P.onError: ", message );
+    }
+    
+    p2p.prototype.onInfo = function( message ) {
+        console.warn( "P2P.onInfo: ", message );
     }
 
     //--- static ---
@@ -193,6 +221,15 @@ P2P = (function() {
 // from Flash into the P2P instance.
 
 P2PRelay = function( P2PId, functionName, parameters ) {
-    P2P.getInstanceById( P2PId )[ functionName ]( parameters );
+    var instance = P2P.getInstanceById( P2PId );
+    if( instance ) {
+        if( instance[ functionName ] ) {
+            instance[ functionName ]( parameters );
+        } else {
+            console.error( "P2P.P2PRelay: Function name " + functionName + " does not exist" );
+        }
+    } else {
+        console.error( "P2P.P2PRelay: Instance " + P2PId + " does not exist" );
+    }
 }
 
