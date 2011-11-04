@@ -101,7 +101,6 @@ package {
 			}
 			
 			m_NetGroup = new NetGroup( m_NetConnection, m_GroupSpec.groupspecWithAuthorizations());
-			m_NetGroup.receiveMode = NetGroupReceiveMode.NEAREST;
 			m_NetGroup.addEventListener( NetStatusEvent.NET_STATUS, onNetStatus );
 		}
 		
@@ -118,20 +117,18 @@ package {
 		}
 
 		
+		
 		//--- stream ---
 		
 		public function stream( message:Object ):void {
 			if( m_NetConnection && m_NetConnection.connected && m_NetGroup ) {
 				if( !m_NetStream ) {
-					m_NetStream = new NetStream( m_NetConnection, m_GroupSpec.groupspecWithoutAuthorizations());
+					m_NetStream = new NetStream( m_NetConnection, NetStream.DIRECT_CONNECTIONS );
 					m_NetStream.client = this;
 					m_NetStream.dataReliable = false;
+					m_NetStream.bufferTime = 0;
 					m_NetStream.addEventListener( NetStatusEvent.NET_STATUS, onNetStatus );
-					
-					if( message.name == undefined )
-						message.name = "stream" + new Date().getTime() + "" + Math.floor( Math.random() * 99999 );
-					
-					m_NetStream.publish( message.name, "live" );
+					m_NetStream.publish( "stream" );
 				}
 				
 				m_NetStream.send( "onStream", message );
@@ -141,7 +138,6 @@ package {
 		}
 		
 		public function onStream( message:Object ):void {
-//			trace( message );
 			callJS( "onStream", message );
 		}
 		
@@ -189,30 +185,29 @@ package {
 					callJS( "onJoinGroup", { success: false, reason: e.info.code } );
 					break;
 
-				
 				case "NetGroup.Posting.Notify":
 				case "NetGroup.SendTo.Notify":
 					callJS( "onPost", e.info.message );
 					break;
 				
-				case "NetGroup.Neighbor.Connect":
+/*				case "NetGroup.Neighbor.Connect":
 					callJS( "onNeighbor", { neighbor: e.info.neighbor, peerId: e.info.peerID } );
 					break;
 				
-				case "NetGroup.Neighbor.Disconnect":
 					callJS( "onNeighborDisconnect", { neighbor: e.info.neighbor, peerId: e.info.peerID } );
 					break;
-					
-				case "NetGroup.MulticastStream.PublishNotify":
+*/					
+				case "NetGroup.Neighbor.Connect":
 					if( m_StreamsIn[ e.info.name ] == undefined ) {
-						m_StreamsIn[ e.info.name ] = new NetStream( m_NetConnection, m_GroupSpec.groupspecWithoutAuthorizations());
+						m_StreamsIn[ e.info.name ] = new NetStream( m_NetConnection, e.info.peerID );
 						m_StreamsIn[ e.info.name ].client = this;
-						m_StreamsIn[ e.info.name ].play( e.info.name );
-						callJS( "onInfo", { code: e.info.code, name: e.info.name } );
+						m_StreamsIn[ e.info.name ].bufferTime = 0;
+						m_StreamsIn[ e.info.name ].play( "stream" );
+						callJS( "onInfo", { code: e.info.code, name: e.info.name, peerID: e.info.peerID } );
 					}
 					break;
 				
-				case "NetGroup.MulticastStream.UnpublishNotify":
+				case "NetGroup.Neighbor.Disconnect":
 					if( m_StreamsIn[ e.info.name ] != undefined ) {
 						m_StreamsIn[ e.info.name ].close();
 						delete m_StreamsIn[ e.info.name ];
@@ -221,16 +216,14 @@ package {
 					break;
 				
 				case "NetStream.Connect.Success":
+				case "NetStream.Connect.Closed":
+				case "NetStream.Publish.Start":
 					callJS( "onInfo", { code: e.info.code } );
 					break;					
 				
-				case "NetStream.Publish.Start":
-					callJS( "onInfo", { code: e.info.code, description: e.info.description } );
-					break;
-				
-				default:
+		/*		default:
 					callJS( "onError", { error: "Unhandled NetStatus Event", info: e.info } );
-					break;
+					break;*/
 			}
 		}
 	}

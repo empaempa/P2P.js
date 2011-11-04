@@ -105,7 +105,7 @@ P2P = (function() {
         
         // need to wait for the swf constructor to run
         
-        if( this.swf.connect === undefined ) {
+        if( this.swf === undefined || this.swf.connect === undefined ) {
             var scope = this;
             var method = this.connect;
             setTimeout( function() { method.call( scope, url ) }, 33 );
@@ -175,7 +175,7 @@ P2P = (function() {
     p2p.prototype.onPost = function( message ) {
         this.callOnCallbacks( "post", message );
     }
-    
+
     p2p.prototype.stream = function( message ) {
         if( this.swf.stream )
             this.swf.stream( message );
@@ -186,6 +186,7 @@ P2P = (function() {
     p2p.prototype.onStream = function( message ) {
         this.callOnCallbacks( "stream", message );
     }
+    
     
     p2p.prototype.replicate = function( message ) {
         // todo
